@@ -1,61 +1,4 @@
-import streamlit as st
-import google.generativeai as genai
-from pdf2image import convert_from_bytes
-from PIL import Image
-import io
-import base64
-import time
-import os
-from typing import List, Optional, Tuple
-import zipfile
-from docx import Document
-import tempfile
-import logging
-from dataclasses import dataclass
-from enum import Enum
-import json
-import hashlib
-
-# Import utility modules (assuming they're in the same directory)
-try:
-    from utils import (
-        ImagePreprocessor, MarkdownPostProcessor, 
-        FileValidator, APIManager, ProgressTracker
-    )
-except ImportError:
-    # If utils module isn't available, create minimal stubs
-    class ImagePreprocessor:
-        @staticmethod
-        def enhance_image_quality(image): return image
-        @staticmethod
-        def deskew_image(image): return image
-        @staticmethod
-        def remove_noise(image): return image
-        @staticmethod
-        def auto_crop_margins(image): return image
-    
-    class MarkdownPostProcessor:
-        @staticmethod
-        def clean_markdown(content): return content
-        @staticmethod
-        def fix_common_ocr_errors(content, language="english"): return content
-        @staticmethod
-        def add_table_of_contents(content): return content
-    
-    class FileValidator:
-        @staticmethod
-        def validate_file(file_bytes, filename): return True, ""
-        @staticmethod
-        def get_file_info(file_bytes, filename): return {"filename": filename, "size": len(file_bytes)}
-    
-    class APIManager:
-        def __init__(self, api_key, **kwargs): pass
-        def make_request_with_retry(self, func, *args, **kwargs): return func(*args, **kwargs)
-    
-    class ProgressTracker:
-        def start(self, total): pass
-        def update(self, page): pass
-        def get_eta(self): return     def process_document(self, file_bytes: bytes, file_type: str, language: Language, 
+def process_document(self, file_bytes: bytes, file_type: str, language: Language, 
                         status_callback=None, enable_toc: bool = False) -> Tuple[str, ProcessingStatus]:
         """Process entire document and return Markdown content."""
         status = ProcessingStatus()
@@ -115,7 +58,64 @@ except ImportError:
                     
                     markdown_content.append(fixed_content)
                     status.processed_pages += 1
-                    logger.info(f"Successfully processed page
+                    logger.info(f"Successfully processed pageimport streamlit as st
+import google.generativeai as genai
+from pdf2image import convert_from_bytes
+from PIL import Image
+import io
+import base64
+import time
+import os
+from typing import List, Optional, Tuple
+import zipfile
+from docx import Document
+import tempfile
+import logging
+from dataclasses import dataclass
+from enum import Enum
+import json
+import hashlib
+
+# Import utility modules (assuming they're in the same directory)
+try:
+    from utils import (
+        ImagePreprocessor, MarkdownPostProcessor, 
+        FileValidator, APIManager, ProgressTracker
+    )
+except ImportError:
+    # If utils module isn't available, create minimal stubs
+    class ImagePreprocessor:
+        @staticmethod
+        def enhance_image_quality(image): return image
+        @staticmethod
+        def deskew_image(image): return image
+        @staticmethod
+        def remove_noise(image): return image
+        @staticmethod
+        def auto_crop_margins(image): return image
+    
+    class MarkdownPostProcessor:
+        @staticmethod
+        def clean_markdown(content): return content
+        @staticmethod
+        def fix_common_ocr_errors(content, language="english"): return content
+        @staticmethod
+        def add_table_of_contents(content): return content
+    
+    class FileValidator:
+        @staticmethod
+        def validate_file(file_bytes, filename): return True, ""
+        @staticmethod
+        def get_file_info(file_bytes, filename): return {"filename": filename, "size": len(file_bytes)}
+    
+    class APIManager:
+        def __init__(self, api_key, **kwargs): pass
+        def make_request_with_retry(self, func, *args, **kwargs): return func(*args, **kwargs)
+    
+    class ProgressTracker:
+        def start(self, total): pass
+        def update(self, page): pass
+        def get_eta(self): return None
         def get_stats(self): return {}
 
 # Configure logging
@@ -541,4 +541,390 @@ def get_format_icon(format_type: OutputFormat) -> str:
     
     with col1:
         st.header("📁 File Upload")
-      
+        
+        uploaded_files = st.file_uploader(
+            "Choose PDF or image files",
+            type=['pdf', 'png', 'jpg', 'jpeg', 'bmp', 'tiff'],
+            accept_multiple_files=True,
+            help="Upload scanned PDFs or images to convert to Markdown"
+        )
+        
+        if uploaded_files:
+            st.success(f"✅ {len(uploaded_files)} file(s) uploaded")
+            
+            # File validation and info
+            valid_files = []
+            with st.expander("📊 File Details", expanded=True):
+                for i, file in enumerate(uploaded_files):
+                    col_a, col_b, col_c = st.columns([2, 1, 1])
+                    
+                    # Validate file
+                    file_bytes = file.read()
+                    file.seek(0)  # Reset file pointer
+                    
+                    is_valid, error_msg = FileValidator.validate_file(file_bytes, file.name)
+                    
+                    with col_a:
+                        if is_valid:
+                            st.write(f"✅ **{file.name}**")
+                            valid_files.append(file)
+                        else:
+                            st.write(f"❌ **{file.name}**")
+                            st.error(f"Error: {error_msg}")
+                    
+                    with col_b:
+                        size_mb = len(file_bytes) / (1024 * 1024)
+                        st.write(f"{size_mb:.1f} MB")
+                    
+                    with col_c:
+                        file_info = FileValidator.get_file_info(file_bytes, file.name)
+                        st.write(f"Type: {file_info.get('type', 'unknown').upper()}")
+            
+            uploaded_files = valid_files  # Only keep valid files
+    
+    with col2:
+        st.header("🎛️ Processing Controls")
+        
+        # Show processing statistics if available
+        if st.session_state.processing_results:
+            st.subheader("📈 Last Processing Stats")
+            total_processed = sum(1 for r in st.session_state.processing_results.values() 
+                                if r.get('status', {}).get('processed_pages', 0) > 0)
+            st.metric("Documents Processed", total_processed)
+            
+            if total_processed > 0:
+                avg_success_rate = sum(
+                    r['status']['processed_pages'] / max(1, r['status']['total_pages']) * 100
+                    for r in st.session_state.processing_results.values()
+                    if r.get('status', {}).get('total_pages', 0) > 0
+                ) / max(1, len([r for r in st.session_state.processing_results.values() 
+                              if r.get('status', {}).get('total_pages', 0) > 0]))
+                st.metric("Average Success Rate", f"{avg_success_rate:.1f}%")
+        
+        # Processing button
+        process_button = st.button(
+            "🚀 Process Documents",
+            disabled=not (api_key and uploaded_files) or st.session_state.current_processing,
+            type="primary",
+            use_container_width=True
+        )
+        
+        # Status indicators
+        if not api_key:
+            st.warning("⚠️ Please enter your Gemini API key")
+        elif not uploaded_files:
+            st.warning("⚠️ Please upload at least one valid file")
+        elif st.session_state.current_processing:
+            st.info("🔄 Processing in progress...")
+        else:
+            st.success("✅ Ready to process!")
+        
+        # Clear results button
+        if st.session_state.processing_results:
+            if st.button("🗑️ Clear Results", use_container_width=True):
+                st.session_state.processing_results = {}
+                st.rerun()
+    
+    # Processing section
+    if process_button and api_key and uploaded_files:
+        st.session_state.current_processing = True
+        
+        try:
+            # Initialize processor with advanced options
+            processor = DocumentProcessor(
+                api_key, 
+                enable_preprocessing=enable_preprocessing
+            )
+            
+            # Create containers for dynamic updates
+            progress_container = st.container()
+            results_container = st.container()
+            
+            st.session_state.processing_results = {}
+            
+            # Process each file
+            for file_idx, uploaded_file in enumerate(uploaded_files):
+                with st.container():
+                    st.markdown(f"### 📄 Processing: `{uploaded_file.name}`")
+                    
+                    # Create progress tracking elements
+                    progress_col1, progress_col2 = st.columns([3, 1])
+                    
+                    with progress_col1:
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                    
+                    with progress_col2:
+                        eta_display = st.empty()
+                    
+                    # Metrics display
+                    metrics_container = st.container()
+                    
+                    # Determine file type
+                    file_type = "pdf" if uploaded_file.type == "application/pdf" else "image"
+                    
+                    # Status tracking callback
+                    def update_status(status: ProcessingStatus):
+                        # Update progress bar
+                        progress_percentage = status.progress_percentage / 100
+                        progress_bar.progress(progress_percentage)
+                        
+                        # Update status text
+                        status_text.text(status.status_message)
+                        
+                        # Update ETA
+                        if status.processing_stats and status.processing_stats.get('eta'):
+                            eta_display.metric("ETA", status.processing_stats['eta'])
+                        
+                        # Update metrics
+                        with metrics_container:
+                            met_col1, met_col2, met_col3, met_col4 = st.columns(4)
+                            
+                            with met_col1:
+                                st.metric("Total Pages", status.total_pages)
+                            with met_col2:
+                                st.metric("Processed", status.processed_pages)
+                            with met_col3:
+                                st.metric("Failed", status.failed_pages)
+                            with met_col4:
+                                if status.processing_stats.get('avg_time_per_page'):
+                                    st.metric("Avg Time/Page", status.processing_stats['avg_time_per_page'])
+                    
+                    # Process document
+                    start_time = time.time()
+                    
+                    with st.spinner(f"🔄 Processing {uploaded_file.name}..."):
+                        file_bytes = uploaded_file.read()
+                        markdown_content, final_status = processor.process_document(
+                            file_bytes, 
+                            file_type, 
+                            language, 
+                            update_status,
+                            enable_toc=enable_toc
+                        )
+                    
+                    processing_time = time.time() - start_time
+                    
+                    # Store results
+                    st.session_state.processing_results[uploaded_file.name] = {
+                        'content': markdown_content,
+                        'status': final_status,
+                        'processing_time': processing_time,
+                        'file_type': file_type,
+                        'original_filename': uploaded_file.name
+                    }
+                    
+                    # Show completion status
+                    success_rate = (final_status.processed_pages / max(1, final_status.total_pages)) * 100
+                    
+                    if success_rate >= 90:
+                        st.success(f"✅ **Excellent!** {uploaded_file.name} processed successfully ({success_rate:.1f}% success rate)")
+                    elif success_rate >= 70:
+                        st.warning(f"⚠️ **Good** {uploaded_file.name} processed with some issues ({success_rate:.1f}% success rate)")
+                    else:
+                        st.error(f"❌ **Issues detected** with {uploaded_file.name} ({success_rate:.1f}% success rate)")
+                    
+                    # Processing summary
+                    with st.expander(f"📊 Processing Summary: {uploaded_file.name}"):
+                        summary_col1, summary_col2 = st.columns(2)
+                        
+                        with summary_col1:
+                            st.write(f"**Total Pages:** {final_status.total_pages}")
+                            st.write(f"**Successfully Processed:** {final_status.processed_pages}")
+                            st.write(f"**Failed Pages:** {final_status.failed_pages}")
+                            st.write(f"**Success Rate:** {success_rate:.1f}%")
+                        
+                        with summary_col2:
+                            st.write(f"**Processing Time:** {processing_time:.1f}s")
+                            if final_status.total_pages > 0:
+                                avg_time = processing_time / final_status.total_pages
+                                st.write(f"**Avg Time per Page:** {avg_time:.1f}s")
+                            st.write(f"**File Type:** {file_type.upper()}")
+                            st.write(f"**Language:** {language.value}")
+                    
+                    st.markdown("---")
+            
+        except Exception as e:
+            st.error(f"❌ **Processing Error:** {str(e)}")
+            logger.error(f"Processing error: {str(e)}")
+        
+        finally:
+            st.session_state.current_processing = False
+    
+    # Results display and download section
+    if st.session_state.processing_results:
+        st.header("📥 Results & Downloads")
+        
+        # Summary statistics
+        total_files = len(st.session_state.processing_results)
+        total_pages = sum(r['status'].total_pages for r in st.session_state.processing_results.values())
+        total_processed = sum(r['status'].processed_pages for r in st.session_state.processing_results.values())
+        total_failed = sum(r['status'].failed_pages for r in st.session_state.processing_results.values())
+        
+        # Summary metrics
+        sum_col1, sum_col2, sum_col3, sum_col4 = st.columns(4)
+        
+        with sum_col1:
+            st.metric("📄 Total Files", total_files)
+        with sum_col2:
+            st.metric("📑 Total Pages", total_pages)
+        with sum_col3:
+            st.metric("✅ Processed", total_processed)
+        with sum_col4:
+            st.metric("❌ Failed", total_failed)
+        
+        # Individual file results
+        for filename, result in st.session_state.processing_results.items():
+            with st.expander(f"📖 Preview & Edit: {filename}", expanded=False):
+                
+                # Editable content
+                edited_content = st.text_area(
+                    f"📝 Edit Markdown for {filename}",
+                    value=result['content'],
+                    height=400,
+                    key=f"edit_{hash(filename)}",
+                    help="You can edit the generated Markdown before downloading"
+                )
+                
+                # Update the stored content with edits
+                st.session_state.processing_results[filename]['content'] = edited_content
+                
+                # Word count and other stats
+                word_count = len(edited_content.split())
+                char_count = len(edited_content)
+                line_count = len(edited_content.split('\n'))
+                
+                stat_col1, stat_col2, stat_col3 = st.columns(3)
+                with stat_col1:
+                    st.metric("Words", word_count)
+                with stat_col2:
+                    st.metric("Characters", char_count)
+                with stat_col3:
+                    st.metric("Lines", line_count)
+                
+                # Download buttons for individual files
+                st.subheader("💾 Download Options")
+                download_cols = st.columns(len(output_formats))
+                
+                for i, format_type in enumerate(output_formats):
+                    with download_cols[i]:
+                        try:
+                            converted_content = convert_to_format(edited_content, format_type)
+                            
+                            # Determine MIME type
+                            mime_types = {
+                                OutputFormat.MARKDOWN: "text/markdown",
+                                OutputFormat.TEXT: "text/plain",
+                                OutputFormat.DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            }
+                            
+                            st.download_button(
+                                label=f"⬇️ Download .{format_type.value}",
+                                data=converted_content,
+                                file_name=f"{filename.rsplit('.', 1)[0]}.{format_type.value}",
+                                mime=mime_types[format_type],
+                                use_container_width=True
+                            )
+                        except Exception as e:
+                            st.error(f"Error creating {format_type.value}: {str(e)}")
+        
+        # Bulk download section
+        if len(st.session_state.processing_results) > 1:
+            st.subheader("📦 Bulk Download")
+            
+            bulk_col1, bulk_col2 = st.columns([2, 1])
+            
+            with bulk_col1:
+                try:
+                    # Create ZIP file
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for filename, result in st.session_state.processing_results.items():
+                            base_name = filename.rsplit('.', 1)[0]
+                            
+                            for format_type in output_formats:
+                                try:
+                                    converted_content = convert_to_format(result['content'], format_type)
+                                    zip_file.writestr(
+                                        f"{base_name}.{format_type.value}",
+                                        converted_content
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Error adding {filename} as {format_type.value} to ZIP: {str(e)}")
+                    
+                    zip_buffer.seek(0)
+                    
+                    st.download_button(
+                        label="📦 Download All Files (ZIP)",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"converted_documents_{int(time.time())}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Error creating ZIP file: {str(e)}")
+            
+            with bulk_col2:
+                # ZIP contents info
+                st.info(f"""
+                **ZIP Contents:**
+                - {len(st.session_state.processing_results)} documents
+                - {len(output_formats)} format(s) each
+                - Total files: {len(st.session_state.processing_results) * len(output_formats)}
+                """)
+        
+        # Processing summary
+        if total_pages > 0:
+            overall_success_rate = (total_processed / total_pages) * 100
+            
+            if overall_success_rate >= 95:
+                st.success(f"🎉 **Excellent Results!** Overall success rate: {overall_success_rate:.1f}%")
+            elif overall_success_rate >= 80:
+                st.info(f"👍 **Good Results!** Overall success rate: {overall_success_rate:.1f}%")
+            else:
+                st.warning(f"⚠️ **Mixed Results** Overall success rate: {overall_success_rate:.1f}% - Consider re-processing failed pages")
+    
+    # Footer with additional information
+    st.markdown("---")
+    
+    footer_col1, footer_col2, footer_col3 = st.columns(3)
+    
+    with footer_col1:
+        st.markdown("### 🚀 Features")
+        st.markdown("""
+        - Multi-language support (English/Nepali)
+        - Advanced image preprocessing
+        - Batch processing capability
+        - Multiple output formats
+        - Real-time progress tracking
+        """)
+    
+    with footer_col2:
+        st.markdown("### 💡 Tips")
+        st.markdown("""
+        - Use high-resolution scans (300+ DPI)
+        - Ensure good contrast and lighting
+        - Select correct document language
+        - Enable preprocessing for better results
+        - Edit generated content before downloading
+        """)
+    
+    with footer_col3:
+        st.markdown("### 📊 System Info")
+        st.markdown(f"""
+        - **Model**: Gemini 2.0 Flash Exp
+        - **Max File Size**: 100MB
+        - **Supported Formats**: PDF, PNG, JPG, JPEG, BMP, TIFF
+        - **Session Files**: {len(st.session_state.processing_results)}
+        """)
+    
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        Built with ❤️ using <strong>Streamlit</strong> and <strong>Google Gemini 2.5 Flash Lite</strong><br>
+        For support and documentation, visit our GitHub repository
+    </div>
+    """, unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
