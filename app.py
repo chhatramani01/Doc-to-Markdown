@@ -59,6 +59,8 @@ def process_document(self, file_bytes: bytes, file_type: str, language: Language
                     markdown_content.append(fixed_content)
                     status.processed_pages += 1
                     logger.info(f"Successfully processed page {i + 1} (quality: {quality_score:.2f})")
+
+
 import google.generativeai as genai
 from pdf2image import convert_from_bytes
 from PIL import Image
