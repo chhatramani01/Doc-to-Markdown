@@ -61,7 +61,12 @@ def process_document(self, file_bytes: bytes, file_type: str, language: Language
                     logger.info(f"Successfully processed page {i + 1} (quality: {quality_score:.2f})")
 
 
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    # handle the error or provide alternative
+    genai = None
+  
 from pdf2image import convert_from_bytes
 from PIL import Image
 import io
