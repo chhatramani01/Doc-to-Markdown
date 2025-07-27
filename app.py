@@ -220,8 +220,16 @@ def main():
             format_func=lambda x: f".{x.value}"
         )
         
-        st.markdown("---")
         st.info("Built by Chhatramani Yadav using Streamlit & Gemini.")
+
+        st.markdown("### 📋 Instructions")
+        st.markdown("""
+        1. Enter your Gemini API key
+        2. Select document language
+        3. Upload PDF or image files
+        4. Choose output formats
+        5. Click 'Start Process'
+        """)
 
     # --- Main Page Layout ---
     st.title("Document Processing Dashboard")
