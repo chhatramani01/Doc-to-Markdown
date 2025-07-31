@@ -59,9 +59,10 @@ class DocumentProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash-latest') # Using the latest flash model
         
-    def get_language_prompt(self, language: Language, user_prompt: str = "") -> str:
-        """Get the language-specific instruction prompt for the Gemini API, with optional user instructions."""
-        base_prompt = f"""
+    def get_language_prompt(self, language: Language) -> str:
+        """Get the language-specific instruction prompt for the Gemini API."""
+        # This detailed prompt guides the AI to produce high-quality, structured output.
+        return f"""
 You are an expert document digitization assistant. Your task is to convert this scanned document image into clean, properly structured Markdown format.
 
 CRITICAL REQUIREMENTS:
@@ -72,12 +73,9 @@ CRITICAL REQUIREMENTS:
 5.  **Language**: The document is in **{language.value}**. Process it with careful attention to the correct script, grammar, and spelling. For Nepali, ensure proper Devanagari script handling.
 6.  **No Extra Text**: Return ONLY the Markdown content of the page. Do not add any explanations, apologies, or summaries like "Here is the markdown".
 """
-        if user_prompt and user_prompt.strip():
-            base_prompt += f"\n\nADDITIONAL USER INSTRUCTIONS:\n{user_prompt.strip()}\n"
-        return base_prompt
     
     def pdf_to_images(self, pdf_bytes: bytes) -> List[Image.Image]:
-        """Convert PDF bytes into a list of PIL Images using system Poppler."""
+        """Convert PDF bytes into a list of PIL Images."""
         try:
             images = convert_from_bytes(pdf_bytes, dpi=300)
             logger.info(f"Successfully converted PDF to {len(images)} images.")
@@ -87,10 +85,10 @@ CRITICAL REQUIREMENTS:
             st.error(f"PDF conversion failed. The file might be corrupted or password-protected. Error: {e}")
             raise
 
-    def process_image_with_gemini(self, image: Image.Image, language: Language, user_prompt: str = "") -> Optional[str]:
-        """Process a single image using the Gemini API and return Markdown text, including user prompt."""
+    def process_image_with_gemini(self, image: Image.Image, language: Language) -> Optional[str]:
+        """Process a single image using the Gemini API and return Markdown text."""
         try:
-            prompt = self.get_language_prompt(language, user_prompt)
+            prompt = self.get_language_prompt(language)
             response = self.model.generate_content([prompt, image])
             
             # Validate response before returning
@@ -108,7 +106,7 @@ CRITICAL REQUIREMENTS:
             return f"<!-- Page processing failed due to an API error: {e} -->"
 
     def process_document(self, file_bytes: bytes, file_type: str, language: Language, 
-                        status_callback=None, user_prompt: str = "") -> Tuple[str, ProcessingStatus]:
+                        status_callback=None) -> Tuple[str, ProcessingStatus]:
         """
         Process an entire document (PDF or image).
         This function orchestrates the conversion, page by page, and uses a callback
@@ -130,7 +128,7 @@ CRITICAL REQUIREMENTS:
                 if status_callback:
                     status_callback(status, markdown_pages)
                 
-                page_content = self.process_image_with_gemini(image, language, user_prompt)
+                page_content = self.process_image_with_gemini(image, language)
                 
                 if page_content:
                     markdown_pages.append(page_content)
@@ -206,45 +204,22 @@ def convert_to_format(markdown_content: str, output_format: OutputFormat) -> byt
 def main():
     """Main function to run the Streamlit application."""
     st.set_page_config(page_title="DocuMint AI", page_icon="📄", layout="wide")
-
-    # --- Session State for API Key ---
-    if 'api_key' not in st.session_state:
-        st.session_state['api_key'] = ''
-
+    
     # --- Sidebar ---
     with st.sidebar:
-        st.markdown("""
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <img src="https://img.icons8.com/ios-filled/50/000000/document--v1.png" width="32"/>
-                <h2 style="margin-bottom: 0;">DocuMint AI</h2>
-            </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<span style='color: #6c757d;'>AI-powered document conversion to Markdown, Text, and DOCX.</span>", unsafe_allow_html=True)
-        st.markdown("---")
+        st.title("📄 DocuMint AI")
+        st.markdown("AI-powered document conversion to Markdown, Text, and DOCX.")
         st.header("⚙️ Configuration")
-
-        api_key_input = st.text_input(
-            "Gemini API Key",
-            type="password",
-            value=st.session_state['api_key'],
-            help="Get your key from Google AI Studio."
-        )
-        if api_key_input:
-            st.session_state['api_key'] = api_key_input
-        api_key = st.session_state['api_key']
-
-        language = st.selectbox(
-            "Document Language",
-            options=[lang for lang in Language],
-            format_func=lambda x: x.value
-        )
+        
+        api_key = st.text_input("Gemini API Key", type="password", help="Get your key from Google AI Studio.")
+        language = st.selectbox("Document Language", options=[lang for lang in Language], format_func=lambda x: x.value)
         output_formats = st.multiselect(
             "Output Formats",
             options=[fmt for fmt in OutputFormat],
             default=[OutputFormat.MARKDOWN, OutputFormat.DOCX],
             format_func=lambda x: f".{x.value}"
         )
-
+        
         st.info("Built by Chhatramani Yadav using Streamlit & Gemini.")
 
         st.markdown("### 📋 Instructions")
@@ -257,22 +232,8 @@ def main():
         """)
 
     # --- Main Page Layout ---
-    st.markdown("""
-        <div style="background: linear-gradient(90deg, #4e54c8 0%, #8f94fb 100%); padding: 2rem 2rem 1rem 2rem; border-radius: 12px; margin-bottom: 2rem; color: white;">
-            <h1 style="margin-bottom: 0.2em;">📄 DocuMint AI Dashboard</h1>
-            <p style="font-size: 1.2em; margin-bottom: 0;">Upload your PDFs or images and watch the AI convert them in real-time.</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-
-    # --- Additional Prompt Box ---
-    st.markdown("<h4 style='margin-top:0;'>Additional Instructions (Optional)</h4>", unsafe_allow_html=True)
-    user_prompt = st.text_area(
-        "Add any extra instructions for the AI (e.g., focus on tables, ignore watermarks, etc.)",
-        value="",
-        height=80,
-        key="user_prompt_box"
-    )
+    st.title("Document Processing Dashboard")
+    st.markdown("Upload your PDFs or images, and watch the AI convert them in real-time.")
 
     uploaded_files = st.file_uploader(
         "Choose PDF or image files",
@@ -280,31 +241,29 @@ def main():
         accept_multiple_files=True,
         help="You can upload multiple files at once."
     )
-
-    # --- Start Processing Button and Notices ---
+    
     process_button = st.button(
         "🚀 Start Processing",
         disabled=not (api_key and uploaded_files),
         type="primary"
     )
-    if not api_key:
-        st.warning("⚠️ Please enter your Gemini API key in the sidebar.")
-    elif not uploaded_files:
-        st.info("ℹ️ Upload one or more files to get started.")
+    
+    if not api_key: st.warning("⚠️ Please enter your Gemini API key in the sidebar.")
+    if not uploaded_files: st.info("ℹ️ Upload one or more files to get started.")
 
     # --- Processing Logic ---
     if process_button and api_key and uploaded_files:
         try:
             processor = DocumentProcessor(api_key)
             all_results = {}
-
+            
             # Create a container for all results
             results_area = st.container()
-            results_area.header(":sparkles: Conversion Results")
+            results_area.header("Conversion Results")
 
             for file_idx, uploaded_file in enumerate(uploaded_files):
                 with results_area.expander(f"**Processing: {uploaded_file.name}**", expanded=True):
-
+                    
                     # Create placeholders for dynamic content. These will be updated live.
                     status_placeholder = st.empty()
                     live_preview_placeholder = st.empty()
@@ -316,16 +275,16 @@ def main():
                         # --- Status Metrics Update (Single Line) ---
                         with status_placeholder.container():
                             cols = st.columns([2, 1, 1, 1])
-                            cols[0].markdown(f"<span style='font-size:1.1em;'><b>Status:</b> {status.status_message}</span>", unsafe_allow_html=True)
+                            cols[0].write(f"**Status:** {status.status_message}")
                             cols[1].metric("Total Pages", status.total_pages)
                             cols[2].metric("Processed", f"{status.processed_pages}/{status.total_pages}")
                             cols[3].metric("Failed", status.failed_pages)
                             if status.total_pages > 0:
                                 st.progress(status.progress_percentage / 100)
-
+                        
                         # --- Live Markdown Preview Update ---
                         with live_preview_placeholder.container():
-                            st.markdown("<h4 style='margin-bottom:0.5em;'>Live Markdown Preview</h4>", unsafe_allow_html=True)
+                            st.subheader("Live Markdown Preview")
                             # Join the pages processed so far for a live view
                             live_content = "\n\n---\n\n".join(current_md_pages)
                             st.markdown(live_content, unsafe_allow_html=True)
@@ -334,15 +293,15 @@ def main():
                     file_bytes = uploaded_file.read()
                     file_type = "pdf" if uploaded_file.type == "application/pdf" else "image"
                     markdown_content, final_status = processor.process_document(
-                        file_bytes, file_type, language, update_status_ui, user_prompt
+                        file_bytes, file_type, language, update_status_ui
                     )
-
+                    
                     # Store final results
                     all_results[uploaded_file.name] = markdown_content
-
+                    
                     # --- Final Editable Area and Download Buttons ---
-                    st.success(f"✅ <b>{uploaded_file.name}</b> processed successfully!", icon="✅")
-                    st.markdown("<h4>Edit & Download</h4>", unsafe_allow_html=True)
+                    st.success(f"✅ **{uploaded_file.name}** processed successfully!")
+                    st.subheader("Edit & Download")
                     edited_content = st.text_area(
                         "You can make final edits to the Markdown here:",
                         value=markdown_content,
@@ -351,7 +310,7 @@ def main():
                     )
                     # Update results with any edits made by the user
                     all_results[uploaded_file.name] = edited_content
-
+                    
                     download_cols = st.columns(len(output_formats))
                     for i, fmt in enumerate(output_formats):
                         with download_cols[i]:
@@ -375,7 +334,7 @@ def main():
                             for fmt in output_formats:
                                 converted_bytes = convert_to_format(content, fmt)
                                 zf.writestr(f"{base_name}/{base_name}.{fmt.value}", converted_bytes)
-
+                    
                     st.download_button(
                         label="📥 Download All (ZIP)",
                         data=zip_buffer.getvalue(),
@@ -383,7 +342,7 @@ def main():
                         mime="application/zip",
                         use_container_width=True
                     )
-
+            
         except Exception as e:
             st.error(f"❌ A critical error occurred during processing: {e}")
             logger.error(f"Top-level processing error: {e}", exc_info=True)
